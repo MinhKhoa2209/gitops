@@ -1,0 +1,25 @@
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: api-slo-rules
+  namespace: demo
+  labels:
+    app: api
+spec:
+  groups:
+    - name: api.slo
+      rules:
+        - alert: ApiHighErrorRate
+          expr: |
+            1 - (
+              sum(rate(flask_http_request_total{namespace="demo",status!~"5.."}[5m]))
+              /
+              clamp_min(sum(rate(flask_http_request_total{namespace="demo"}[5m])), 1)
+            ) > 0.05
+          for: 2m
+          labels:
+            severity: warning
+            slo: api-success-rate
+          annotations:
+            summary: API success rate is below 95%
+            description: The W9 API is burning error budget. Check the canary before promoting.
