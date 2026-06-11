@@ -1,7 +1,5 @@
 # W9 GitOps Observability Canary Lab
 
-This repository proves the API delivery challenge from `W9-chieu-obs-canary.html`:
-
 - Every change goes through Git and Argo CD sync.
 - The API is deployed with Argo Rollouts.
 - Prometheus scrapes API metrics and evaluates the success-rate SLO.
