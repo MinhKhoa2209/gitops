@@ -40,6 +40,7 @@ spec:
                 email_configs:
                   - to: minhkhoaoik2209@gmail.com
                     send_resolved: true
+              - name: "null"
         grafana:
           adminPassword: admin
   destination:
