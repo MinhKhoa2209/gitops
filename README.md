@@ -8,7 +8,7 @@ This repository demonstrates the core GitOps workflow:
 Git -> GitHub -> Argo CD -> Kubernetes -> App
 ```
 
-The lab uses a simple nginx web application so the focus stays on GitOps concepts:
+The lab uses a small full-stack Next.js web application so the focus stays on GitOps concepts while still showing a real frontend/backend split:
 
 - Git as the source of truth
 - Argo CD pull-based sync
@@ -44,6 +44,11 @@ gitops/
   k8s/
     namespace.yaml
     web.yaml
+  web-app/
+    src/
+      app/
+      components/
+      features/
   README.md
 ```
 
@@ -53,7 +58,8 @@ gitops/
 - `argocd/root.yaml`: root Argo CD Application for the app-of-apps pattern.
 - `argocd/apps/web.yaml`: child Argo CD Application that syncs the `k8s/` folder.
 - `k8s/namespace.yaml`: creates the `demo` namespace first with sync wave `-1`.
-- `k8s/web.yaml`: defines ConfigMap, Deployment, and Service with sync waves.
+- `k8s/web.yaml`: defines ConfigMap, Deployment, probes, and Service with sync waves.
+- `web-app/`: Next.js frontend/backend app deployed by the Kubernetes manifest.
 
 ## Prerequisites
 
@@ -72,6 +78,18 @@ docker --version
 minikube version
 kubectl version --client
 git --version
+```
+
+Build the app image expected by `k8s/web.yaml`:
+
+```powershell
+docker build -t gitops-console:0.1.0 web-app
+```
+
+If using minikube, load the image into the cluster runtime:
+
+```powershell
+minikube image load gitops-console:0.1.0 -p w9
 ```
 
 ## Run The Lab
@@ -128,6 +146,22 @@ Open from another terminal:
 ```powershell
 curl.exe http://127.0.0.1:8080/
 ```
+
+Check the backend API:
+
+```powershell
+curl.exe http://127.0.0.1:8080/api/lab-status
+curl.exe http://127.0.0.1:8080/api/health
+```
+
+## Argo CD And Kubernetes Files
+
+When switching from nginx to the Next.js app:
+
+- Keep `argocd/root.yaml` unchanged. It still watches `argocd/apps`.
+- Keep `argocd/apps/web.yaml` unchanged. It still watches `k8s`.
+- Keep `k8s/namespace.yaml` unchanged. Namespace `demo` still syncs first.
+- Update `k8s/web.yaml`. It now uses image `gitops-console:0.1.0`, container port `3000`, `/api/health` probes, and a ConfigMap for app environment values.
 
 ## Validate Manifests
 
