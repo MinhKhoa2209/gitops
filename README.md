@@ -1,212 +1,213 @@
-# W9 GitOps Hands-on Lab
+# W9 GitOps Observability Canary Lab
 
-Standalone GitOps lab for W9 morning practice.
+Repo nay chung minh pipeline an toan cho API theo de bai `W9-chieu-obs-canary.html`:
 
-This repository demonstrates the core GitOps workflow:
+- Moi thay doi di qua Git va Argo CD sync.
+- API duoc deploy bang Argo Rollouts `Rollout`.
+- Prometheus scrape metric API va tinh SLO success rate.
+- Alert `ApiHighErrorRate` fire va gui ve email ca nhan.
+- Canary ban loi tu abort ve ban cu.
+- Rollback bang `git revert` duoi 5 phut.
 
-```text
-Git -> GitHub -> Argo CD -> Kubernetes -> App
-```
-
-The lab uses a small full-stack Next.js web application so the focus stays on GitOps concepts while still showing a real frontend/backend split:
-
-- Git as the source of truth
-- Argo CD pull-based sync
-- Automated prune and self-heal
-- Rollback through `git revert`
-- App-of-apps
-- Sync waves
-- GitHub Actions manifest validation
-
-## Repository
+## Files Added
 
 ```text
-https://github.com/MinhKhoa2209/gitops
+app/
+  Dockerfile
+  app.py
+argocd/apps/
+  api.yaml
+  argo-rollouts.yaml
+  kube-prometheus-stack.yaml
+k8s-api/
+  api.yaml
+  analysis-template.yaml
+  prometheusrule.yaml
+  servicemonitor.yaml
+evidence/
+  *.png
 ```
 
-Local path:
+## What Each File Proves
 
-```text
-D:\AWS\gitops
-```
+- `app/app.py`: Flask API co `/`, `/healthz`, `/metrics`, `ERROR_RATE`, `VERSION`.
+- `argocd/apps/argo-rollouts.yaml`: cai Argo Rollouts qua GitOps.
+- `argocd/apps/kube-prometheus-stack.yaml`: cai Prometheus/Grafana/Alertmanager va cau hinh email receiver.
+- `argocd/apps/api.yaml`: Argo CD Application sync folder `k8s-api/`.
+- `k8s-api/api.yaml`: API `Rollout` + Service, canary chay qua `AnalysisTemplate`.
+- `k8s-api/servicemonitor.yaml`: Prometheus scrape `/metrics` cua API.
+- `k8s-api/prometheusrule.yaml`: SLO alert `ApiHighErrorRate`.
+- `k8s-api/analysis-template.yaml`: rule tu cham canary bang success rate.
 
-## Folder Structure
-
-```text
-gitops/
-  .github/
-    workflows/
-      validate.yml
-  argocd/
-    root.yaml
-    apps/
-      web.yaml
-  k8s/
-    namespace.yaml
-    web.yaml
-  web-app/
-    src/
-      app/
-      components/
-      features/
-  README.md
-```
-
-## What Each File Does
-
-- `.github/workflows/validate.yml`: validates Kubernetes manifests with `kubeconform`.
-- `argocd/root.yaml`: root Argo CD Application for the app-of-apps pattern.
-- `argocd/apps/web.yaml`: child Argo CD Application that syncs the `k8s/` folder.
-- `k8s/namespace.yaml`: creates the `demo` namespace first with sync wave `-1`.
-- `k8s/web.yaml`: defines ConfigMap, Deployment, probes, and Service with sync waves.
-- `web-app/`: Next.js frontend/backend app deployed by the Kubernetes manifest.
-
-## Prerequisites
-
-Install or prepare:
-
-- Docker Desktop
-- minikube
-- kubectl
-- git
-- A GitHub account with access to this repo
-
-Check tools:
+## Build Image
 
 ```powershell
-docker --version
-minikube version
-kubectl version --client
-git --version
+docker build -t w9-api:1 app
+minikube image load w9-api:1 -p w9
 ```
 
-Build the app image expected by `k8s/web.yaml`:
-
-```powershell
-docker build -t gitops-console:0.1.0 web-app
-```
-
-If using minikube, load the image into the cluster runtime:
-
-```powershell
-minikube image load gitops-console:0.1.0 -p w9
-```
-
-## Run The Lab
-
-Start a local Kubernetes cluster:
-
-```powershell
-minikube start -p w9 --driver=docker
-kubectl config use-context w9
-kubectl get nodes
-```
-
-Install Argo CD:
-
-```powershell
-kubectl create namespace argocd --dry-run=client -o yaml | kubectl apply -f -
-kubectl apply --server-side -n argocd -f https://raw.githubusercontent.com/argoproj/argo-cd/stable/manifests/install.yaml
-kubectl -n argocd rollout status deployment/argocd-server --timeout=240s
-```
-
-Bootstrap the first Application:
-
-```powershell
-kubectl apply -f argocd\apps\web.yaml
-```
-
-Then bootstrap app-of-apps:
-
-```powershell
-kubectl apply -f argocd\root.yaml
-```
-
-Check Argo CD:
+## Check Lab State
 
 ```powershell
 kubectl -n argocd get applications
-kubectl -n argocd get application web
+kubectl -n demo get rollout,analysisrun,pod,svc,servicemonitor,prometheusrule
+kubectl -n monitoring get alertmanager,prometheus,pod
 ```
 
-Check the demo app:
+Expected:
 
-```powershell
-kubectl -n demo get all
+```text
+api / argo-rollouts / kube-prometheus-stack / root / web = Synced, Healthy
+rollout api = 4/4 available
+Alertmanager = READY 1, RECONCILED True, AVAILABLE True
 ```
 
-Port-forward the Service:
+## SLO Query
 
-```powershell
-kubectl -n demo port-forward svc/web 8080:80
+SLO: API success rate >= 95%.
+
+Used by `k8s-api/analysis-template.yaml`:
+
+```promql
+sum(rate(flask_http_request_total{namespace="demo",status!~"5.."}[2m]))
+/
+clamp_min(sum(rate(flask_http_request_total{namespace="demo"}[2m])), 1)
 ```
 
-Open from another terminal:
+Canary passes when:
 
-```powershell
-curl.exe http://127.0.0.1:8080/
+```text
+result[0] >= 0.95
 ```
 
-Check the backend API:
+Canary fails and aborts when success rate drops below `0.95` in enough measurements.
 
-```powershell
-curl.exe http://127.0.0.1:8080/api/lab-status
-curl.exe http://127.0.0.1:8080/api/health
+## Alert Query
+
+Used by `k8s-api/prometheusrule.yaml`:
+
+```promql
+1 - (
+  sum(rate(flask_http_request_total{namespace="demo",status!~"5.."}[5m]))
+  /
+  clamp_min(sum(rate(flask_http_request_total{namespace="demo"}[5m])), 1)
+) > 0.05
 ```
 
-## Argo CD And Kubernetes Files
+Meaning:
 
-When switching from nginx to the Next.js app:
+- Error rate > 5%.
+- Must stay bad for `2m`.
+- Alert name: `ApiHighErrorRate`.
+- Receiver: personal email from Alertmanager config.
 
-- Keep `argocd/root.yaml` unchanged. It still watches `argocd/apps`.
-- Keep `argocd/apps/web.yaml` unchanged. It still watches `k8s`.
-- Keep `k8s/namespace.yaml` unchanged. Namespace `demo` still syncs first.
-- Update `k8s/web.yaml`. It now uses image `gitops-console:0.1.0`, container port `3000`, `/api/health` probes, and a ConfigMap for app environment values.
+## Evidence Mapping
 
-## Validate Manifests
+```text
+01-argocd-all-apps-synced-healthy.png
+  Argo CD apps Synced/Healthy.
 
-Local Kubernetes dry-run:
+02-alertmanager-ready.png
+  Alertmanager ready and reconciled.
 
-```powershell
-kubectl apply --dry-run=client --validate=false -f k8s
+03-prometheus-api-target-up.png
+  Prometheus target serviceMonitor/demo/api/0 is UP.
+
+04-prometheus-success-rate-100.png
+  Success-rate query returns 1.
+
+05-prometheus-alert-firing.png
+  ApiHighErrorRate is FIRING.
+
+06-email-api-high-error-rate-received.png
+  Personal email received alert.
+
+07-git-revert-rollback-under-5min.png
+  Rollback by git revert completed under 5 minutes.
+
+08-argocd-analysisrun-failed.png
+  Argo CD shows failed AnalysisRun.
+
+09-analysisrun-success-rate-failed-cli.png
+  AnalysisRun metric success-rate failed below 0.95.
+
+10-rollout-aborted-stable-rs-cli.png
+  RolloutAborted; stable ReplicaSet scaled back up, bad ReplicaSet scaled down.
 ```
 
-GitHub Actions also runs the `validate` workflow on pushes or pull requests that touch:
+## Reproduce Bad Canary
 
-- `k8s/**`
-- `argocd/**`
-- `.github/workflows/**`
+Change `k8s-api/api.yaml`:
 
-## GitOps Practice
+```yaml
+- name: ERROR_RATE
+  value: "1"
+- name: VERSION
+  value: "v2-broken"
+```
 
-Change the desired state in Git, then push:
+Then:
 
 ```powershell
-git add .
-git commit -m "update desired state"
+git add k8s-api/api.yaml
+git commit -m "release broken api canary"
 git push
+kubectl -n argocd annotate application api argocd.argoproj.io/refresh=hard --overwrite
 ```
 
-Refresh Argo CD if needed:
+Watch:
 
 ```powershell
-kubectl -n argocd annotate application web argocd.argoproj.io/refresh=hard --overwrite
+kubectl -n demo get analysisrun -w
+kubectl -n demo describe analysisrun
+kubectl -n demo describe rollout api
 ```
 
-Rollback with Git:
+Expected evidence:
+
+```text
+AnalysisRun Failed
+Metric "success-rate" assessed Failed
+RolloutAborted
+Stable RS scaled up
+Bad RS scaled down to 0
+```
+
+## Reproduce Alert Email
+
+Temporarily create a fault injector through Git or patch the API to keep `ERROR_RATE="1"` long enough for the `5m` query plus `for: 2m` window. Generate traffic:
 
 ```powershell
+kubectl -n demo delete pod load --ignore-not-found
+kubectl -n demo run load --image=busybox --restart=Never -- sh -c "while true; do wget -qO- http://api:8080/ >/dev/null; sleep 0.2; done"
+```
+
+Open:
+
+```text
+http://localhost:9090/alerts
+http://localhost:9093/#/alerts
+```
+
+After taking evidence, revert the fault commit.
+
+## Rollback
+
+```powershell
+$start = Get-Date
 git revert HEAD --no-edit
 git push
+kubectl -n argocd annotate application api argocd.argoproj.io/refresh=hard --overwrite
+kubectl -n argocd get app api
+kubectl -n demo get rollout api
+"Elapsed: $((Get-Date) - $start)"
 ```
 
-## Completion Checklist
+Pass condition:
 
-- [x] Public GitHub repo created.
-- [x] Initial web manifest committed.
-- [x] Argo CD child Application added.
-- [x] Root app-of-apps Application added.
-- [x] Sync waves added.
-- [x] GitHub Actions validation workflow added.
-- [x] Validation workflow has completed successfully.
-- [x] Kubernetes manifests pass local dry-run validation.
+```text
+Elapsed < 5 minutes
+api Synced Healthy
+rollout api 4/4 available
+```
+
