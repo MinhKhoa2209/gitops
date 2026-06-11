@@ -28,7 +28,7 @@ spec:
     spec:
       containers:
         - name: web
-          image: gitops-console:0.1.0
+          image: gitops-console:0.1.1
           imagePullPolicy: IfNotPresent
           ports:
             - name: http
