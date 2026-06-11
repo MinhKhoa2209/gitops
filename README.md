@@ -1,15 +1,15 @@
 # W9 GitOps Observability Canary Lab
 
-Repo nay chung minh pipeline an toan cho API theo de bai `W9-chieu-obs-canary.html`:
+This repository proves the API delivery challenge from `W9-chieu-obs-canary.html`:
 
-- Moi thay doi di qua Git va Argo CD sync.
-- API duoc deploy bang Argo Rollouts `Rollout`.
-- Prometheus scrape metric API va tinh SLO success rate.
-- Alert `ApiHighErrorRate` fire va gui ve email ca nhan.
-- Canary ban loi tu abort ve ban cu.
-- Rollback bang `git revert` duoi 5 phut.
+- Every change goes through Git and Argo CD sync.
+- The API is deployed with Argo Rollouts.
+- Prometheus scrapes API metrics and evaluates the success-rate SLO.
+- `ApiHighErrorRate` fires and sends an email notification.
+- A bad canary automatically aborts back to the previous version.
+- Rollback is completed with `git revert` in less than 5 minutes.
 
-## Files Added
+## Added Files
 
 ```text
 app/
@@ -28,25 +28,25 @@ evidence/
   *.png
 ```
 
-## What Each File Proves
+## File Purpose
 
-- `app/app.py`: Flask API co `/`, `/healthz`, `/metrics`, `ERROR_RATE`, `VERSION`.
-- `argocd/apps/argo-rollouts.yaml`: cai Argo Rollouts qua GitOps.
-- `argocd/apps/kube-prometheus-stack.yaml`: cai Prometheus/Grafana/Alertmanager va cau hinh email receiver.
-- `argocd/apps/api.yaml`: Argo CD Application sync folder `k8s-api/`.
-- `k8s-api/api.yaml`: API `Rollout` + Service, canary chay qua `AnalysisTemplate`.
-- `k8s-api/servicemonitor.yaml`: Prometheus scrape `/metrics` cua API.
-- `k8s-api/prometheusrule.yaml`: SLO alert `ApiHighErrorRate`.
-- `k8s-api/analysis-template.yaml`: rule tu cham canary bang success rate.
+- `app/app.py`: Flask API with `/`, `/healthz`, `/metrics`, `ERROR_RATE`, and `VERSION`.
+- `argocd/apps/argo-rollouts.yaml`: installs Argo Rollouts through GitOps.
+- `argocd/apps/kube-prometheus-stack.yaml`: installs Prometheus, Grafana, Alertmanager, and the email receiver.
+- `argocd/apps/api.yaml`: syncs the `k8s-api/` folder through Argo CD.
+- `k8s-api/api.yaml`: API `Rollout` and Service.
+- `k8s-api/servicemonitor.yaml`: Prometheus scrape config for API `/metrics`.
+- `k8s-api/prometheusrule.yaml`: SLO alert rule `ApiHighErrorRate`.
+- `k8s-api/analysis-template.yaml`: canary success-rate analysis.
 
-## Build Image
+## Build API Image
 
 ```powershell
 docker build -t w9-api:1 app
 minikube image load w9-api:1 -p w9
 ```
 
-## Check Lab State
+## Check Current Lab State
 
 ```powershell
 kubectl -n argocd get applications
@@ -54,7 +54,7 @@ kubectl -n demo get rollout,analysisrun,pod,svc,servicemonitor,prometheusrule
 kubectl -n monitoring get alertmanager,prometheus,pod
 ```
 
-Expected:
+Expected state:
 
 ```text
 api / argo-rollouts / kube-prometheus-stack / root / web = Synced, Healthy
@@ -64,9 +64,9 @@ Alertmanager = READY 1, RECONCILED True, AVAILABLE True
 
 ## SLO Query
 
-SLO: API success rate >= 95%.
+The SLO is API success rate >= 95%.
 
-Used by `k8s-api/analysis-template.yaml`:
+`k8s-api/analysis-template.yaml` uses:
 
 ```promql
 sum(rate(flask_http_request_total{namespace="demo",status!~"5.."}[2m]))
@@ -74,17 +74,17 @@ sum(rate(flask_http_request_total{namespace="demo",status!~"5.."}[2m]))
 clamp_min(sum(rate(flask_http_request_total{namespace="demo"}[2m])), 1)
 ```
 
-Canary passes when:
+Pass condition:
 
 ```text
 result[0] >= 0.95
 ```
 
-Canary fails and aborts when success rate drops below `0.95` in enough measurements.
+If enough measurements fall below `0.95`, the AnalysisRun fails and Argo Rollouts aborts the canary.
 
 ## Alert Query
 
-Used by `k8s-api/prometheusrule.yaml`:
+`k8s-api/prometheusrule.yaml` defines `ApiHighErrorRate`:
 
 ```promql
 1 - (
@@ -96,19 +96,18 @@ Used by `k8s-api/prometheusrule.yaml`:
 
 Meaning:
 
-- Error rate > 5%.
-- Must stay bad for `2m`.
-- Alert name: `ApiHighErrorRate`.
-- Receiver: personal email from Alertmanager config.
+- Error rate is greater than 5%.
+- The condition must hold for `2m`.
+- Alertmanager sends the notification to the configured personal email receiver.
 
-## Evidence Mapping
+## Evidence
 
 ```text
 01-argocd-all-apps-synced-healthy.png
-  Argo CD apps Synced/Healthy.
+  Argo CD apps are Synced and Healthy.
 
 02-alertmanager-ready.png
-  Alertmanager ready and reconciled.
+  Alertmanager is ready and reconciled.
 
 03-prometheus-api-target-up.png
   Prometheus target serviceMonitor/demo/api/0 is UP.
@@ -120,19 +119,19 @@ Meaning:
   ApiHighErrorRate is FIRING.
 
 06-email-api-high-error-rate-received.png
-  Personal email received alert.
+  The personal email inbox received the alert.
 
 07-git-revert-rollback-under-5min.png
-  Rollback by git revert completed under 5 minutes.
+  Rollback with git revert completed in less than 5 minutes.
 
 08-argocd-analysisrun-failed.png
-  Argo CD shows failed AnalysisRun.
+  Argo CD shows the failed AnalysisRun.
 
 09-analysisrun-success-rate-failed-cli.png
-  AnalysisRun metric success-rate failed below 0.95.
+  The AnalysisRun success-rate metric failed below 0.95.
 
 10-rollout-aborted-stable-rs-cli.png
-  RolloutAborted; stable ReplicaSet scaled back up, bad ReplicaSet scaled down.
+  RolloutAborted; the stable ReplicaSet scaled back up and the bad ReplicaSet scaled down.
 ```
 
 ## Reproduce Bad Canary
@@ -146,7 +145,7 @@ Change `k8s-api/api.yaml`:
   value: "v2-broken"
 ```
 
-Then:
+Commit and sync:
 
 ```powershell
 git add k8s-api/api.yaml
@@ -155,7 +154,7 @@ git push
 kubectl -n argocd annotate application api argocd.argoproj.io/refresh=hard --overwrite
 ```
 
-Watch:
+Watch and capture:
 
 ```powershell
 kubectl -n demo get analysisrun -w
@@ -169,13 +168,15 @@ Expected evidence:
 AnalysisRun Failed
 Metric "success-rate" assessed Failed
 RolloutAborted
-Stable RS scaled up
-Bad RS scaled down to 0
+Stable ReplicaSet scaled up
+Bad ReplicaSet scaled down to 0
 ```
 
 ## Reproduce Alert Email
 
-Temporarily create a fault injector through Git or patch the API to keep `ERROR_RATE="1"` long enough for the `5m` query plus `for: 2m` window. Generate traffic:
+Temporarily inject API errors through Git or by patching the API to keep `ERROR_RATE="1"` long enough for the `5m` query and `for: 2m` alert window.
+
+Generate traffic:
 
 ```powershell
 kubectl -n demo delete pod load --ignore-not-found
@@ -189,7 +190,7 @@ http://localhost:9090/alerts
 http://localhost:9093/#/alerts
 ```
 
-After taking evidence, revert the fault commit.
+After capturing the alert and email evidence, revert the fault change.
 
 ## Rollback
 
