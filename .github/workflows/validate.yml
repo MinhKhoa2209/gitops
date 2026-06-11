@@ -5,6 +5,7 @@ on:
   pull_request:
     paths:
       - "k8s/**"
+      - "k8s-api/**"
       - "argocd/**"
       - ".github/workflows/**"
   push:
@@ -12,6 +13,7 @@ on:
       - main
     paths:
       - "k8s/**"
+      - "k8s-api/**"
       - "argocd/**"
       - ".github/workflows/**"
 
@@ -29,4 +31,4 @@ jobs:
           sudo mv kubeconform /usr/local/bin/kubeconform
 
       - name: Validate Kubernetes manifests
-        run: kubeconform -strict -summary k8s
+        run: kubeconform -strict -ignore-missing-schemas -summary k8s k8s-api argocd
