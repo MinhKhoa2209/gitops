@@ -44,6 +44,21 @@ docker build -t w9-api:1 app
 minikube image load w9-api:1 -p w9
 ```
 
+## Configure Alertmanager Email Secret
+
+The email app password is not stored in Git. Create it as a Kubernetes Secret in the `monitoring` namespace before syncing or restarting Alertmanager:
+
+```powershell
+kubectl create namespace monitoring --dry-run=client -o yaml | kubectl apply -f -
+kubectl -n monitoring create secret generic alertmanager-smtp-auth --from-literal=smtp-auth-password="<gmail-app-password>" --dry-run=client -o yaml | kubectl apply -f -
+```
+
+`argocd/apps/kube-prometheus-stack.yaml` mounts that secret into Alertmanager and reads it through:
+
+```text
+/etc/alertmanager/secrets/alertmanager-smtp-auth/smtp-auth-password
+```
+
 ## Check Current Lab State
 
 ```powershell
@@ -209,4 +224,3 @@ Elapsed < 5 minutes
 api Synced Healthy
 rollout api 4/4 available
 ```
-

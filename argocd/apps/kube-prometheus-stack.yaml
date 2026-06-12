@@ -25,7 +25,7 @@ spec:
               smtp_smarthost: smtp.gmail.com:587
               smtp_from: minhkhoaoik2209@gmail.com
               smtp_auth_username: minhkhoaoik2209@gmail.com
-              smtp_auth_password: rwaa atzi xelq evye
+              smtp_auth_password_file: /etc/alertmanager/secrets/alertmanager-smtp-auth/smtp-auth-password
               smtp_require_tls: true
             route:
               group_by:
@@ -41,6 +41,9 @@ spec:
                   - to: minhkhoaoik2209@gmail.com
                     send_resolved: true
               - name: "null"
+          alertmanagerSpec:
+            secrets:
+              - alertmanager-smtp-auth
         grafana:
           adminPassword: admin
   destination:
